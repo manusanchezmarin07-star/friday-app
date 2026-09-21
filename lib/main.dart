@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -5,16 +6,18 @@ import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 late IO.Socket socket;
 
-// Dirección del backend. Por defecto localhost (PC/escritorio).
-// Para el móvil se cambia al compilar:
-//   flutter build ipa --dart-define=FRIDAY_HOST=192.168.1.50
-const String _hostBackend = String.fromEnvironment('FRIDAY_HOST', defaultValue: '127.0.0.1');
+const String _hostDefecto = '100.127.132.67';
 
-void main() {
-  socket = IO.io('http://$_hostBackend:3000', IO.OptionBuilder()
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  final host = prefs.getString('server_host') ?? _hostDefecto;
+
+  socket = IO.io('http://$host:3000', IO.OptionBuilder()
       .setTransports(['websocket'])
       .build());
 
@@ -127,6 +130,7 @@ class _FridayCoreState extends State<FridayCore> {
     const PantallaChat(),
     const PantallaSalud(),
     const PantallaSistema(),
+    const PantallaConfig(),
   ];
 
   @override
@@ -188,6 +192,7 @@ class _FridayCoreState extends State<FridayCore> {
             BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: 'Comms'),
             BottomNavigationBarItem(icon: Icon(Icons.favorite_outline), label: 'Biometría'),
             BottomNavigationBarItem(icon: Icon(Icons.warning_amber_rounded), label: 'Sistema'),
+            BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Config'),
           ],
         ),
       ),
@@ -312,7 +317,11 @@ class _PantallaRedState extends State<PantallaRed> {
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => PantallaApartado(agente: agente)),
+        MaterialPageRoute(
+          builder: (_) => agente.id == 'JARVIS_DEPORTISTA'
+              ? const PantallaGym()
+              : PantallaApartado(agente: agente),
+        ),
       ),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
@@ -748,7 +757,8 @@ class _PantallaChatState extends State<PantallaChat> {
   final TextEditingController _controladorTexto = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   List<Map<String, dynamic>> mensajes = [];
-  String? _agenteSeleccionado; // null = auto-routing
+  String? _agenteSeleccionado;
+  bool _esperandoRespuesta = false;
 
   final ImagePicker _picker = ImagePicker();
   final AudioRecorder _grabador = AudioRecorder();
@@ -758,8 +768,11 @@ class _PantallaChatState extends State<PantallaChat> {
   void initState() {
     super.initState();
     socket.on('respuesta_friday', (data) {
-      if(mounted) {
-        setState(() => mensajes.add({"emisor": "friday", "tipo": "texto", "contenido": data}));
+      if (mounted) {
+        setState(() {
+          _esperandoRespuesta = false;
+          mensajes.add({"emisor": "friday", "tipo": "texto", "contenido": data});
+        });
         _hacerScrollHaciaAbajo();
       }
     });
@@ -768,7 +781,10 @@ class _PantallaChatState extends State<PantallaChat> {
   void enviarOrden() {
     if (_controladorTexto.text.isNotEmpty) {
       socket.emit('mensaje_usuario', _controladorTexto.text);
-      setState(() => mensajes.add({"emisor": "usuario", "tipo": "texto", "contenido": _controladorTexto.text}));
+      setState(() {
+        mensajes.add({"emisor": "usuario", "tipo": "texto", "contenido": _controladorTexto.text});
+        _esperandoRespuesta = true;
+      });
       _controladorTexto.clear();
       _hacerScrollHaciaAbajo();
     }
@@ -787,6 +803,7 @@ class _PantallaChatState extends State<PantallaChat> {
       final base64Image = base64Encode(bytes);
 
       socket.emit('mensaje_imagen', {'imagen': base64Image});
+      if (mounted) setState(() => _esperandoRespuesta = true);
     }
   }
 
@@ -802,6 +819,7 @@ class _PantallaChatState extends State<PantallaChat> {
 
           final bytes = await File(rutaAudio).readAsBytes();
           socket.emit('mensaje_audio', {'audio': base64Encode(bytes)});
+          if (mounted) setState(() => _esperandoRespuesta = true);
         }
       } else {
         final directorio = await getApplicationDocumentsDirectory();
@@ -874,6 +892,41 @@ class _PantallaChatState extends State<PantallaChat> {
     super.dispose();
   }
 
+  Widget _buildTypingIndicator() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF162032),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 40,
+              child: LinearProgressIndicator(
+                color: Colors.cyanAccent,
+                backgroundColor: Color(0xFF0A0E17),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'F.R.I.D.A.Y. procesando...',
+              style: TextStyle(
+                color: Colors.cyanAccent.withOpacity(0.7),
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -884,8 +937,11 @@ class _PantallaChatState extends State<PantallaChat> {
             child: ListView.builder(
               controller: _scrollController,
               padding: const EdgeInsets.all(16),
-              itemCount: mensajes.length,
+              itemCount: mensajes.length + (_esperandoRespuesta ? 1 : 0),
               itemBuilder: (context, index) {
+                if (index == mensajes.length && _esperandoRespuesta) {
+                  return _buildTypingIndicator();
+                }
                 final msg = mensajes[index];
                 final esUsuario = msg["emisor"] == "usuario";
 
@@ -1350,6 +1406,958 @@ class _PantallaSistemaState extends State<PantallaSistema> {
           Text(valor, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         ],
       ),
+    );
+  }
+}
+
+// ==========================================
+// 5. PANTALLA GYM — J.A.R.V.I.S. DEPORTISTA
+// ==========================================
+class PantallaGym extends StatefulWidget {
+  const PantallaGym({super.key});
+  @override
+  State<PantallaGym> createState() => _PantallaGymState();
+}
+
+class _PantallaGymState extends State<PantallaGym> {
+  static const Color _color = Color(0xFF43D17C);
+  static const Map<int, String> _etiquetas = {
+    1: 'Empuje', 2: 'Pierna', 3: 'Tirón', 4: 'Full Body',
+  };
+
+  int _diaSeleccionado = 1;
+  String _diaNombre = 'Lunes';
+  List<Map<String, dynamic>> _ejercicios = [];
+  List<Map<String, dynamic>> _statsSubidas = [];
+  bool _sesionIniciada = false;
+  bool _cargando = false;
+
+  void _onDatosRutina(dynamic data) {
+    if (!mounted || data is! Map) return;
+    setState(() {
+      _ejercicios = List<Map<String, dynamic>>.from(
+        (data['ejercicios'] as List? ?? []).map((e) => Map<String, dynamic>.from(e as Map)),
+      );
+      _diaNombre = data['dia']?.toString() ?? _diaNombre;
+      _cargando = false;
+    });
+  }
+
+  void _onStatsGym(dynamic data) {
+    if (!mounted || data is! List) return;
+    setState(() {
+      _statsSubidas = List<Map<String, dynamic>>.from(
+        data.map((e) => Map<String, dynamic>.from(e as Map)),
+      );
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    socket.on('datos_rutina', _onDatosRutina);
+    socket.on('stats_gym', _onStatsGym);
+    socket.emit('obtener_stats_gym');
+  }
+
+  @override
+  void dispose() {
+    socket.off('datos_rutina', _onDatosRutina);
+    socket.off('stats_gym', _onStatsGym);
+    super.dispose();
+  }
+
+  void _iniciarSesion() {
+    setState(() {
+      _cargando = true;
+      _sesionIniciada = true;
+    });
+    socket.emit('iniciar_sesion_gym', {'numeroDia': _diaSeleccionado});
+  }
+
+  void _onEjercicioCompletado(Map<String, dynamic> ejercicio, double kg) {
+    socket.emit('completar_ejercicio', {
+      'id': ejercicio['id'],
+      'kg': kg,
+      'dia': _diaNombre,
+      'ejercicio': ejercicio['ejercicio'],
+    });
+    setState(() {
+      final idx = _ejercicios.indexWhere((e) => e['id'] == ejercicio['id']);
+      if (idx >= 0) {
+        _ejercicios[idx] = {..._ejercicios[idx], 'completado': 1, 'carga_kg': kg};
+      }
+    });
+    socket.emit('obtener_stats_gym');
+  }
+
+  void _abrirHojaEjercicio(Map<String, dynamic> ejercicio) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _HojaEjercicio(
+        ejercicio: ejercicio,
+        onCompletar: (kg) => _onEjercicioCompletado(ejercicio, kg),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final completados = _ejercicios.where((e) => (e['completado'] as int? ?? 0) == 1).length;
+    final total = _ejercicios.length;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0E17),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0A0E17),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Row(children: [
+          Icon(Icons.fitness_center, color: Color(0xFF43D17C), size: 20),
+          SizedBox(width: 8),
+          Text('J.A.R.V.I.S. Deportista', style: TextStyle(color: Colors.white, fontSize: 16)),
+        ]),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (_statsSubidas.isNotEmpty) ...[
+              _buildStatsCard(),
+              const SizedBox(height: 16),
+            ],
+            _buildSelectorDia(),
+            const SizedBox(height: 16),
+            if (!_sesionIniciada)
+              _buildBotonIniciar()
+            else if (_cargando)
+              const Center(child: Padding(
+                padding: EdgeInsets.only(top: 40),
+                child: CircularProgressIndicator(color: Color(0xFF43D17C)),
+              ))
+            else ...[
+              if (total > 0)
+                _buildProgresoSesion(completados, total),
+              const SizedBox(height: 10),
+              ..._ejercicios.map((e) => _buildTarjetaEjercicio(e)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatsCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111927),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _color.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.trending_up, color: Color(0xFF43D17C), size: 16),
+            const SizedBox(width: 8),
+            const Text('Esta semana subiste de peso en:',
+                style: TextStyle(color: Color(0xFF43D17C), fontWeight: FontWeight.bold, fontSize: 13)),
+          ]),
+          const SizedBox(height: 10),
+          ..._statsSubidas.map((s) => Padding(
+            padding: const EdgeInsets.only(bottom: 5),
+            child: Row(children: [
+              const Icon(Icons.arrow_upward, color: Colors.greenAccent, size: 13),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(s['ejercicio']?.toString() ?? '',
+                    style: const TextStyle(color: Colors.white, fontSize: 12)),
+              ),
+              Text('${s['kgAnterior']} → ${s['kgActual']} kg',
+                  style: const TextStyle(color: Colors.grey, fontSize: 11)),
+            ]),
+          )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSelectorDia() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('¿Qué sesión toca hoy?',
+            style: TextStyle(color: Colors.grey, fontSize: 13)),
+        const SizedBox(height: 10),
+        Row(
+          children: List.generate(4, (i) {
+            final n = i + 1;
+            final sel = _diaSeleccionado == n;
+            return Expanded(
+              child: GestureDetector(
+                onTap: () => setState(() {
+                  _diaSeleccionado = n;
+                  _sesionIniciada = false;
+                  _ejercicios = [];
+                }),
+                child: Container(
+                  margin: EdgeInsets.only(right: i < 3 ? 8 : 0),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: sel ? _color.withOpacity(0.2) : const Color(0xFF111927),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: sel ? _color : _color.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Día $n',
+                          style: TextStyle(
+                              color: sel ? Colors.white : Colors.grey,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12)),
+                      Text(_etiquetas[n]!,
+                          style: TextStyle(
+                              color: sel ? _color : Colors.grey,
+                              fontSize: 10)),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBotonIniciar() {
+    return GestureDetector(
+      onTap: _iniciarSesion,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          color: _color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _color),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.play_arrow, color: Color(0xFF43D17C), size: 26),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Empezar sesión — Día $_diaSeleccionado',
+                    style: const TextStyle(
+                        color: Color(0xFF43D17C),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15)),
+                Text(_etiquetas[_diaSeleccionado]!,
+                    style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProgresoSesion(int completados, int total) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111927),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _color.withOpacity(0.25)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Progreso sesión — $_diaNombre',
+                  style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              Text('$completados / $total',
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: total > 0 ? completados / total : 0,
+              minHeight: 6,
+              backgroundColor: const Color(0xFF0A0E17),
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF43D17C)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTarjetaEjercicio(Map<String, dynamic> e) {
+    final completado = (e['completado'] as int? ?? 0) == 1;
+    return GestureDetector(
+      onTap: () => _abrirHojaEjercicio(e),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: completado ? const Color(0xFF0D2010) : const Color(0xFF111927),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: completado ? _color.withOpacity(0.6) : _color.withOpacity(0.2),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              completado ? Icons.check_circle : Icons.radio_button_unchecked,
+              color: completado ? _color : Colors.grey,
+              size: 22,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(e['ejercicio']?.toString() ?? '',
+                      style: TextStyle(
+                        color: completado ? _color : Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      )),
+                  if ((e['maquina']?.toString() ?? '').isNotEmpty)
+                    Text(e['maquina'].toString(),
+                        style: const TextStyle(color: Colors.grey, fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('${e['series'] ?? 3} × ${e['reps'] ?? '10'}',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold)),
+                Text('${(e['carga_kg'] ?? 0).toStringAsFixed(1)} kg',
+                    style: const TextStyle(color: Colors.grey, fontSize: 11)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ==========================================
+// 5b. HOJA EJERCICIO — slider + series + timer
+// ==========================================
+class _HojaEjercicio extends StatefulWidget {
+  final Map<String, dynamic> ejercicio;
+  final void Function(double kg) onCompletar;
+
+  const _HojaEjercicio({required this.ejercicio, required this.onCompletar});
+
+  @override
+  State<_HojaEjercicio> createState() => _HojaEjercicioState();
+}
+
+class _HojaEjercicioState extends State<_HojaEjercicio> {
+  static const Color _color = Color(0xFF43D17C);
+
+  late double _kg;
+  late double _kgMin;
+  late double _kgMax;
+  late int _totalSeries;
+  int _seriesCompletadas = 0;
+
+  Timer? _timer;
+  int _segundos = 0;
+  bool _timerActivo = false;
+  bool _timerEsSerie = true;
+  bool _ejercicioFinalizado = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final lastKg = (widget.ejercicio['carga_kg'] as num?)?.toDouble() ?? 0.0;
+    _totalSeries = (widget.ejercicio['series'] as int?) ?? 3;
+    _kg = lastKg > 0 ? lastKg : 20.0;
+    _kgMin = lastKg > 20 ? lastKg - 20 : 0.0;
+    _kgMax = lastKg > 0 ? lastKg + 30 : 100.0;
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _iniciarTimer(int segundosTotales, bool esSerie) {
+    _timer?.cancel();
+    setState(() {
+      _segundos = segundosTotales;
+      _timerActivo = true;
+      _timerEsSerie = esSerie;
+    });
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      setState(() {
+        if (_segundos > 0) {
+          _segundos--;
+        } else {
+          _timerActivo = false;
+          t.cancel();
+          if (_ejercicioFinalizado) Navigator.pop(context);
+        }
+      });
+    });
+  }
+
+  void _completarSerie(int indice) {
+    if (_seriesCompletadas != indice) return;
+    setState(() => _seriesCompletadas++);
+    if (_seriesCompletadas < _totalSeries) {
+      _iniciarTimer(60, true);
+    }
+  }
+
+  void _completarEjercicio() {
+    widget.onCompletar(_kg);
+    setState(() => _ejercicioFinalizado = true);
+    _iniciarTimer(120, false);
+  }
+
+  void _saltarDescanso() {
+    _timer?.cancel();
+    Navigator.pop(context);
+  }
+
+  String _formatoTiempo(int s) {
+    final m = s ~/ 60;
+    final seg = s % 60;
+    return '${m.toString().padLeft(2, '0')}:${seg.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nombre = widget.ejercicio['ejercicio']?.toString() ?? 'Ejercicio';
+    final maquina = widget.ejercicio['maquina']?.toString() ?? '';
+    final reps = widget.ejercicio['reps']?.toString() ?? '10';
+    final rango = _kgMax - _kgMin;
+    final divisiones = (rango / 2.5).round().clamp(1, 9999);
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.78,
+      maxChildSize: 0.95,
+      minChildSize: 0.4,
+      builder: (_, ctrl) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF111927),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: ListView(
+          controller: ctrl,
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+
+            // Si el ejercicio ya está finalizado, mostramos solo el timer de descanso
+            if (_ejercicioFinalizado) ...[
+              const Center(
+                child: Icon(Icons.check_circle, color: Color(0xFF43D17C), size: 48),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: Text('¡Ejercicio completado!',
+                    style: TextStyle(
+                        color: _color,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 24),
+              _buildTimer(),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.grey),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.skip_next, color: Colors.grey),
+                label: const Text('Saltar descanso',
+                    style: TextStyle(color: Colors.grey)),
+                onPressed: _saltarDescanso,
+              ),
+            ] else ...[
+              // Nombre + máquina
+              Text(nombre,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold)),
+              if (maquina.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(maquina,
+                      style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                ),
+              const SizedBox(height: 16),
+
+              // Info series/reps
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0A0E17),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _color.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _infoCol('Series', '$_totalSeries'),
+                    Container(
+                        width: 1,
+                        height: 30,
+                        color: Colors.grey.withOpacity(0.3)),
+                    _infoCol('Reps', reps),
+                    Container(
+                        width: 1,
+                        height: 30,
+                        color: Colors.grey.withOpacity(0.3)),
+                    _infoCol('Hechas', '$_seriesCompletadas/$_totalSeries'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Slider kg
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Carga',
+                      style: TextStyle(color: Colors.grey, fontSize: 13)),
+                  Text('${_kg.toStringAsFixed(1)} kg',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold)),
+                ],
+              ),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: _color,
+                  inactiveTrackColor: _color.withOpacity(0.2),
+                  thumbColor: _color,
+                  overlayColor: _color.withOpacity(0.15),
+                  valueIndicatorColor: _color,
+                  valueIndicatorTextStyle:
+                      const TextStyle(color: Colors.black),
+                ),
+                child: Slider(
+                  value: _kg.clamp(_kgMin, _kgMax),
+                  min: _kgMin,
+                  max: _kgMax,
+                  divisions: divisiones,
+                  label: '${_kg.toStringAsFixed(1)} kg',
+                  onChanged: (v) {
+                    final snapped =
+                        ((v / 2.5).round() * 2.5).clamp(_kgMin, _kgMax);
+                    setState(() => _kg = snapped);
+                  },
+                ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('${_kgMin.toStringAsFixed(0)} kg',
+                      style: const TextStyle(color: Colors.grey, fontSize: 10)),
+                  Text('${_kgMax.toStringAsFixed(0)} kg',
+                      style:
+                          const TextStyle(color: Colors.grey, fontSize: 10)),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Series tracker
+              Row(
+                children: List.generate(_totalSeries, (i) {
+                  final hecho = i < _seriesCompletadas;
+                  final siguiente = i == _seriesCompletadas;
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: siguiente ? () => _completarSerie(i) : null,
+                      child: Container(
+                        margin: EdgeInsets.only(right: i < _totalSeries - 1 ? 8 : 0),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color: hecho
+                              ? _color.withOpacity(0.2)
+                              : const Color(0xFF0A0E17),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: hecho
+                                ? _color
+                                : siguiente
+                                    ? Colors.white.withOpacity(0.5)
+                                    : Colors.grey.withOpacity(0.2),
+                          ),
+                        ),
+                        child: Icon(
+                          hecho ? Icons.check : Icons.fitness_center,
+                          color: hecho
+                              ? _color
+                              : siguiente
+                                  ? Colors.white
+                                  : Colors.grey,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: Text(
+                  _seriesCompletadas < _totalSeries
+                      ? 'Toca la serie ${_seriesCompletadas + 1} cuando la termines'
+                      : 'Todas las series completadas ✓',
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Timer entre series
+              if (_timerActivo) ...[
+                _buildTimer(),
+                const SizedBox(height: 16),
+              ],
+
+              // Botón completar (solo cuando todas las series están hechas)
+              if (_seriesCompletadas >= _totalSeries)
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _color,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: const Icon(Icons.check_circle, size: 20),
+                  label: Text(
+                    'Completar ejercicio — ${_kg.toStringAsFixed(1)} kg',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  onPressed: _completarEjercicio,
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimer() {
+    final esSerie = _timerEsSerie;
+    final color = esSerie ? Colors.amberAccent : Colors.lightBlueAccent;
+    final label = esSerie ? 'Descanso entre series' : 'Descanso entre ejercicios';
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.timer, color: color, size: 18),
+              const SizedBox(width: 8),
+              Text(label, style: TextStyle(color: color, fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _formatoTiempo(_segundos),
+            style: TextStyle(
+              color: color,
+              fontSize: 38,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoCol(String label, String valor) {
+    return Column(
+      children: [
+        Text(label,
+            style: const TextStyle(color: Colors.grey, fontSize: 11)),
+        const SizedBox(height: 4),
+        Text(valor,
+            style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16)),
+      ],
+    );
+  }
+}
+
+// ==========================================
+// 6. PANTALLA CONFIG — Servidor
+// ==========================================
+class PantallaConfig extends StatefulWidget {
+  const PantallaConfig({super.key});
+  @override
+  State<PantallaConfig> createState() => _PantallaConfigState();
+}
+
+class _PantallaConfigState extends State<PantallaConfig> {
+  final _ctrl = TextEditingController();
+  String _mensaje = '';
+  bool _guardado = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarHost();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _cargarHost() async {
+    final prefs = await SharedPreferences.getInstance();
+    final host = prefs.getString('server_host') ?? _hostDefecto;
+    setState(() => _ctrl.text = host);
+  }
+
+  Future<void> _guardar() async {
+    final host = _ctrl.text.trim();
+    if (host.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('server_host', host);
+    setState(() {
+      _guardado = true;
+      _mensaje = 'Guardado. Cierra y vuelve a abrir la app para conectar.';
+    });
+  }
+
+  void _restaurar() {
+    setState(() => _ctrl.text = _hostDefecto);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(children: [
+              Icon(Icons.settings, color: Colors.cyanAccent, size: 18),
+              SizedBox(width: 8),
+              Text('Configuración',
+                  style: TextStyle(
+                      color: Colors.cyanAccent,
+                      letterSpacing: 2,
+                      fontWeight: FontWeight.bold)),
+            ]),
+            const SizedBox(height: 24),
+
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF111927),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.cyanAccent.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Servidor F.R.I.D.A.Y.',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'IP o nombre de host de tu PC. Usa la IP de Tailscale para acceder desde cualquier sitio.',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _ctrl,
+                    style: const TextStyle(color: Colors.white, fontSize: 15),
+                    keyboardType: TextInputType.url,
+                    decoration: InputDecoration(
+                      hintText: _hostDefecto,
+                      hintStyle: TextStyle(color: Colors.grey.withOpacity(0.5)),
+                      filled: true,
+                      fillColor: const Color(0xFF0A0E17),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide.none,
+                      ),
+                      suffixText: ':3000',
+                      suffixStyle: const TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.cyanAccent,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          icon: const Icon(Icons.save, size: 18),
+                          label: const Text('Guardar',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          onPressed: _guardar,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                              color: Colors.grey.withOpacity(0.4)),
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: _restaurar,
+                        child: const Text('Restaurar',
+                            style: TextStyle(color: Colors.grey, fontSize: 13)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            if (_mensaje.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: _guardado
+                        ? Colors.greenAccent.withOpacity(0.1)
+                        : Colors.redAccent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: _guardado
+                            ? Colors.greenAccent.withOpacity(0.4)
+                            : Colors.redAccent.withOpacity(0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _guardado ? Icons.check_circle : Icons.error,
+                        color: _guardado ? Colors.greenAccent : Colors.redAccent,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(_mensaje,
+                            style: TextStyle(
+                                color: _guardado
+                                    ? Colors.greenAccent
+                                    : Colors.redAccent,
+                                fontSize: 13)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF111927),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.withOpacity(0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Conexión actual',
+                      style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  _filaCon(Icons.circle,
+                      socket.connected ? 'Conectado' : 'Desconectado',
+                      socket.connected ? Colors.greenAccent : Colors.redAccent),
+                  const SizedBox(height: 4),
+                  _filaCon(Icons.dns, socket.io.uri, Colors.grey),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _filaCon(IconData icono, String texto, Color color) {
+    return Row(
+      children: [
+        Icon(icono, color: color, size: 13),
+        const SizedBox(width: 8),
+        Expanded(
+            child: Text(texto,
+                style: TextStyle(color: color, fontSize: 12),
+                overflow: TextOverflow.ellipsis)),
+      ],
     );
   }
 }
