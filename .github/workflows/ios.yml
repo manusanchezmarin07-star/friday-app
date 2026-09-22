@@ -21,6 +21,13 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Configure git and sync with remote
+        run: |
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git fetch origin main
+          git reset --hard origin/main
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -72,6 +79,7 @@ jobs:
             --dart-define=FRIDAY_HOST=${{ steps.host.outputs.value }}
 
       - name: Package IPA
+        id: ipa
         run: |
           mkdir -p Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
@@ -79,14 +87,9 @@ jobs:
           rm -rf Payload
           IPA_SIZE=$(wc -c < FRIDAY.ipa | tr -d ' ')
           echo "size=$IPA_SIZE" >> "$GITHUB_OUTPUT"
-        id: ipa
 
       - name: Update and commit AltStore source JSON
         run: |
-          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git pull --rebase origin main
-
           VERSION="${{ steps.version.outputs.full }}"
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           REPO="${{ github.repository }}"
