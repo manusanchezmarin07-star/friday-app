@@ -5,21 +5,21 @@
     {
       "name": "F.R.I.D.A.Y.",
       "bundleIdentifier": "com.example.fridayApp",
-      "developerName": "Manuel Sánchez",
-      "subtitle": "Tu asistente personal con IA",
-      "localizedDescription": "F.R.I.D.A.Y. — red de agentes IA para gestión personal. Deportes, academia, música, social y más.",
-      "iconURL": "",
+      "developerName": "Manuel Sanchez",
+      "localizedDescription": "F.R.I.D.A.Y. - red de agentes IA para gestion personal.",
+      "iconURL": "https://raw.githubusercontent.com/manusanchezmarin07-star/friday-app/main/assets/icon.png",
       "tintColor": "1E1E2E",
       "screenshotURLs": [],
       "versions": [
         {
-          "version": "1.0.0+0",
-          "date": "2026-09-21T00:00:00Z",
+          "version": "1.0.0",
+          "date": "2026-09-22T00:00:00Z",
           "downloadURL": "https://github.com/manusanchezmarin07-star/friday-app/releases/latest/download/FRIDAY.ipa",
           "size": 0,
-          "localizedDescription": "Versión inicial"
+          "localizedDescription": "Version inicial"
         }
       ]
     }
-  ]
+  ],
+  "news": []
 }
