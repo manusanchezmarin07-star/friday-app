@@ -109,6 +109,13 @@ jobs:
             || git commit -m "ci: AltStore source → build #${{ github.run_number }} (v${{ steps.version.outputs.full }})"
           git push
 
+      - name: Upload IPA as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FRIDAY-iOS
+          path: FRIDAY.ipa
+          retention-days: 30
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
