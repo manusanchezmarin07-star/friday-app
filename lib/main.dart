@@ -501,10 +501,18 @@ class _PantallaApartadoState extends State<PantallaApartado> {
         if (items.isEmpty) return _cajaVacia(d['vacio']?.toString() ?? 'Sin datos.', a.color);
         return Column(
           children: items
-              .map((it) => _itemLista(it, a.color,
-                  destacado: it['destacado'] == true))
+              .map((it) => _itemLista(it, a.color, destacado: it['destacado'] == true))
               .toList(),
         );
+
+      case 'academico':
+        return _renderAcademico(d, a.color);
+
+      case 'musico':
+        return _renderMusico(d, a.color);
+
+      case 'social':
+        return _renderSocial(d, a.color);
 
       case 'stats':
         return _renderStats(d, a.color);
@@ -519,6 +527,297 @@ class _PantallaApartadoState extends State<PantallaApartado> {
       default:
         return _cajaVacia(d['mensaje']?.toString() ?? '', a.color);
     }
+  }
+
+  Widget _renderAcademico(Map<String, dynamic> d, Color color) {
+    final tareas = List<Map<String, dynamic>>.from(d['tareas'] ?? []);
+    final moodle = List<Map<String, dynamic>>.from(d['moodle'] ?? []);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _seccionHeader(Icons.assignment_outlined, 'TAREAS PENDIENTES', color),
+        const SizedBox(height: 8),
+        if (tareas.isEmpty)
+          _cajaVacia('No hay tareas pendientes. ¡Impecable!', color)
+        else
+          ...tareas.map((t) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111927),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: color.withOpacity(0.3)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(top: 2, right: 10),
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(t['asignatura']?.toString() ?? '',
+                              style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                          const SizedBox(height: 2),
+                          Text(t['descripcion']?.toString() ?? '',
+                              style: const TextStyle(color: Colors.white, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                    if (t['fecha'] != null)
+                      Text(t['fecha'].toString(),
+                          style: const TextStyle(color: Colors.grey, fontSize: 10)),
+                  ],
+                ),
+              )),
+        const SizedBox(height: 16),
+        _seccionHeader(Icons.school_outlined, 'CAMPUS VIRTUAL (MOODLE)', color),
+        const SizedBox(height: 8),
+        if (moodle.isEmpty)
+          _cajaVacia('Sin cambios detectados en el campus todavía.', color)
+        else
+          ...moodle.map((m) => Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F1A14),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: color.withOpacity(0.15)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(m['emoji']?.toString() ?? '🔔',
+                        style: const TextStyle(fontSize: 16)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(m['titulo']?.toString() ?? '',
+                              style: const TextStyle(color: Colors.white, fontSize: 13)),
+                          if ((m['detalle']?.toString() ?? '').isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(m['detalle'].toString(),
+                                  style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if ((m['creado_en']?.toString() ?? '').isNotEmpty)
+                      Text(m['creado_en'].toString().substring(0, 10),
+                          style: const TextStyle(color: Colors.grey, fontSize: 10)),
+                  ],
+                ),
+              )),
+      ],
+    );
+  }
+
+  Widget _renderMusico(Map<String, dynamic> d, Color color) {
+    final total = (d['total'] ?? 0) as int;
+    final canciones = List<Map<String, dynamic>>.from(d['canciones'] ?? []);
+    final generos = List<String>.from(d['topGeneros'] ?? []);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111927),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: color.withOpacity(0.4)),
+                ),
+                child: Column(
+                  children: [
+                    Text('$total',
+                        style: TextStyle(color: color, fontSize: 36, fontWeight: FontWeight.bold)),
+                    const Text('canciones analizadas',
+                        style: TextStyle(color: Colors.grey, fontSize: 11)),
+                  ],
+                ),
+              ),
+            ),
+            if (generos.isNotEmpty) ...[
+              const SizedBox(width: 10),
+              Column(
+                children: generos
+                    .map((g) => Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: color.withOpacity(0.35)),
+                          ),
+                          child: Text(g,
+                              style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+                        ))
+                    .toList(),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 16),
+        _seccionHeader(Icons.queue_music, 'ÚLTIMAS ANALIZADAS', color),
+        const SizedBox(height: 8),
+        if (canciones.isEmpty)
+          _cajaVacia('Todavía no guardé canciones. Decime en el chat: "registra [canción] de [artista]"', color)
+        else
+          ...canciones.map((c) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111927),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: color.withOpacity(0.2)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.music_note, color: color, size: 18),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(c['nombre']?.toString() ?? '',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                          Text(
+                            [c['artista'], c['genero']].where((x) => x != null && x.toString().isNotEmpty).join(' · '),
+                            style: TextStyle(color: color.withOpacity(0.7), fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (c['fecha'] != null)
+                      Text(c['fecha'].toString(),
+                          style: const TextStyle(color: Colors.grey, fontSize: 10)),
+                  ],
+                ),
+              )),
+      ],
+    );
+  }
+
+  Widget _renderSocial(Map<String, dynamic> d, Color color) {
+    final contactos = List<Map<String, dynamic>>.from(d['contactos'] ?? []);
+    if (contactos.isEmpty) {
+      return _cajaVacia('No hay contactos VIP. En el chat: "registra a mi abuela como VIP cada 3 días"', color);
+    }
+
+    final pendientes = contactos.where((c) => c['urgencia'] != 'ok').toList()
+      ..sort((a, b) => (b['diasPendiente'] as int).compareTo(a['diasPendiente'] as int));
+    final alDia = contactos.where((c) => c['urgencia'] == 'ok').toList();
+
+    Color _colorUrgencia(String? u) {
+      if (u == 'alta') return const Color(0xFFFF4D5A);
+      if (u == 'media') return const Color(0xFFFFA726);
+      return const Color(0xFF43D17C);
+    }
+
+    Widget _tarjetaContacto(Map<String, dynamic> c) {
+      final urgencia = c['urgencia']?.toString() ?? 'ok';
+      final uc = _colorUrgencia(urgencia);
+      final diasDesde = c['diasDesde'] as int? ?? 0;
+      final diasPend = c['diasPendiente'] as int? ?? 0;
+      final freq = c['frecuenciaDias'] as int? ?? 0;
+
+      String subtitulo;
+      if (urgencia == 'ok') {
+        subtitulo = 'Al día — quedan ${(-diasPend)} días';
+      } else {
+        subtitulo = diasPend == 0 ? '¡Hoy toca contactar!' : 'Hace $diasPend día${diasPend == 1 ? '' : 's'} que toca';
+      }
+
+      return Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111927),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: uc.withOpacity(urgencia == 'ok' ? 0.2 : 0.6), width: urgencia == 'alta' ? 1.5 : 1),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(color: uc, shape: BoxShape.circle),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(c['nombre']?.toString() ?? '',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  Text(subtitulo, style: TextStyle(color: uc, fontSize: 11)),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('cada $freq d', style: const TextStyle(color: Colors.grey, fontSize: 10)),
+                Text('hace $diasDesde d', style: const TextStyle(color: Colors.grey, fontSize: 10)),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (pendientes.isNotEmpty) ...[
+          _seccionHeader(Icons.notifications_active_outlined, 'PENDIENTES DE CONTACTO', const Color(0xFFFF4D5A)),
+          const SizedBox(height: 8),
+          ...pendientes.map(_tarjetaContacto),
+          const SizedBox(height: 16),
+        ],
+        _seccionHeader(Icons.check_circle_outline, 'AL DÍA', const Color(0xFF43D17C)),
+        const SizedBox(height: 8),
+        if (alDia.isEmpty)
+          _cajaVacia('Nadie al día por ahora.', color)
+        else
+          ...alDia.map(_tarjetaContacto),
+      ],
+    );
+  }
+
+  Widget _seccionHeader(IconData icono, String texto, Color color) {
+    return Row(
+      children: [
+        Icon(icono, color: color, size: 14),
+        const SizedBox(width: 6),
+        Text(texto,
+            style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2)),
+      ],
+    );
   }
 
   Widget _cajaVacia(String texto, Color color) {
@@ -1932,31 +2231,33 @@ class _HojaEjercicioState extends State<_HojaEjercicio> {
                 ),
               const SizedBox(height: 16),
 
-              // Info series/reps
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0A0E17),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _color.withOpacity(0.3)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _infoCol('Series', '$_totalSeries'),
-                    Container(
-                        width: 1,
-                        height: 30,
-                        color: Colors.grey.withOpacity(0.3)),
-                    _infoCol('Reps', reps),
-                    Container(
-                        width: 1,
-                        height: 30,
-                        color: Colors.grey.withOpacity(0.3)),
-                    _infoCol('Hechas', '$_seriesCompletadas/$_totalSeries'),
-                  ],
-                ),
+              // Info series/reps + timer siempre visible
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0A0E17),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _color.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _infoCol('Series', '$_totalSeries'),
+                          Container(width: 1, height: 30, color: Colors.grey.withOpacity(0.3)),
+                          _infoCol('Reps', reps),
+                          Container(width: 1, height: 30, color: Colors.grey.withOpacity(0.3)),
+                          _infoCol('Hechas', '$_seriesCompletadas/$_totalSeries'),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  _buildTimerCompacto(),
+                ],
               ),
               const SizedBox(height: 20),
 
@@ -2057,12 +2358,6 @@ class _HojaEjercicioState extends State<_HojaEjercicio> {
               ),
               const SizedBox(height: 20),
 
-              // Timer entre series
-              if (_timerActivo) ...[
-                _buildTimer(),
-                const SizedBox(height: 16),
-              ],
-
               // Botón completar (solo cuando todas las series están hechas)
               if (_seriesCompletadas >= _totalSeries)
                 ElevatedButton.icon(
@@ -2084,6 +2379,58 @@ class _HojaEjercicioState extends State<_HojaEjercicio> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  // Timer siempre visible al lado del info de series
+  Widget _buildTimerCompacto() {
+    final activo = _timerActivo;
+    final Color color;
+    final String tiempo;
+    final String etiqueta;
+
+    if (activo) {
+      color = _timerEsSerie ? Colors.amberAccent : Colors.lightBlueAccent;
+      tiempo = _formatoTiempo(_segundos);
+      etiqueta = _timerEsSerie ? 'serie' : 'ejercicio';
+    } else {
+      color = Colors.grey;
+      final proxDecanso = _seriesCompletadas >= _totalSeries ? 120 : 60;
+      tiempo = _formatoTiempo(proxDecanso);
+      etiqueta = _seriesCompletadas >= _totalSeries ? 'ejercicio' : 'serie';
+    }
+
+    return Container(
+      width: 90,
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      decoration: BoxDecoration(
+        color: activo ? color.withOpacity(0.12) : const Color(0xFF0A0E17),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: activo ? color.withOpacity(0.6) : Colors.grey.withOpacity(0.2),
+          width: activo ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.timer, color: color, size: activo ? 18 : 14),
+          const SizedBox(height: 4),
+          Text(
+            tiempo,
+            style: TextStyle(
+              color: activo ? color : Colors.grey,
+              fontSize: activo ? 18 : 14,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1,
+            ),
+          ),
+          Text(
+            etiqueta,
+            style: TextStyle(color: activo ? color.withOpacity(0.8) : Colors.grey, fontSize: 9),
+          ),
+        ],
       ),
     );
   }
