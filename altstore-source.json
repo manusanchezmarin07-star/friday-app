@@ -12,11 +12,11 @@
       "screenshotURLs": [],
       "versions": [
         {
-          "version": "1.0.0+3",
-          "date": "2026-09-22T14:24:23Z",
+          "version": "1.0.0+6",
+          "date": "2026-09-22T15:02:47Z",
           "downloadURL": "https://github.com/manusanchezmarin07-star/friday-app/releases/latest/download/FRIDAY.ipa",
-          "size": 7538998,
-          "localizedDescription": "Build automático desde GitHub Actions"
+          "size": 7539002,
+          "localizedDescription": "Build automatico desde GitHub Actions"
         }
       ]
     }
